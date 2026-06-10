@@ -299,7 +299,7 @@ class Bot:
         if isinstance(me, dict) and 'adCooldownUntil' in me:
             cd_ms = me['adCooldownUntil']
             now_ms = int(time.time() * 1000)
-            if cd_ms > now_ms:
+            if cd_ms is not None and cd_ms > now_ms:
                 wait_sec = (cd_ms - now_ms) / 1000
                 info(f"⏰ Ad cooldown dari API: {wait_sec:.0f}s ({wait_sec/60:.1f}m)")
                 self.state['next_ad_cd_ms'] = cd_ms
