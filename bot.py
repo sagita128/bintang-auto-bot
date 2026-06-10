@@ -344,6 +344,19 @@ class Bot:
         save_state(self.state)
         return total
 
+    async def _join_channel(self, username):
+        from telethon.tl.functions.channels import JoinChannelRequest
+        client = TelegramClient(str(SESSION_FILE), self.config['api_id'], self.config['api_hash'])
+        await client.connect()
+        try:
+            entity = await client.get_entity(username)
+            await client(JoinChannelRequest(entity))
+            info(f"  ✅ Joined @{username}")
+        except Exception as e:
+            warn(f"  ⚠ Gagal join @{username}: {e}")
+        finally:
+            await client.disconnect()
+
     def claim_tasks(self):
         total = 0.0
         tasks = self.api.get("/api/tasks")
@@ -370,7 +383,14 @@ class Bot:
             if tid in claimed_ids:
                 continue
 
-            # Langsung coba claim tanpa cek available
+            # Join channel dulu kalau SUBSCRIBE_CHANNEL
+            if ttype == 'SUBSCRIBE_CHANNEL' and target:
+                info(f"  📢 Joining @{target}...")
+                try:
+                    asyncio.run(self._join_channel(target))
+                except Exception as e:
+                    warn(f"  ⚠ Join gagal: {e}")
+
             info(f"  🎯 Task '{ttitle}' ({ttype}) target={target}")
             r = self.api.post(f"/api/tasks/{tid}/claim")
             if r.get('ok'):
