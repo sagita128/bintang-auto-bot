@@ -1,0 +1,8 @@
+config.json
+session.session
+*.log
+__pycache__/
+*.pyc
+state.json
+bot.py.b64
+bot.py.gz.b64
