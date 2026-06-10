@@ -146,20 +146,78 @@ async def setup_wizard():
     print("\n🔐 Langkah 2: Login ke Telegram")
     session_file = BASE_DIR / config['session_name']
     client = TelegramClient(str(session_file), int(api_id), api_hash)
-    await client.connect()
+
+    # Connect dengan retry
+    for attempt in range(3):
+        try:
+            await client.connect()
+            break
+        except Exception as e:
+            if attempt < 2:
+                wait = (attempt + 1) * 5
+                warn(f"Koneksi gagal (attempt {attempt+1}/3): {e}")
+                info(f"Coba lagi dalam {wait} detik...")
+                await asyncio.sleep(wait)
+            else:
+                error(f"Gagal connect ke Telegram setelah 3 percobaan: {e}")
+                error("Pastikan koneksi internet stabil, lalu coba lagi nanti.")
+                return False
 
     if not await client.is_user_authorized():
-        await client.send_code_request(phone)
-        code = input("   Masukkan kode verifikasi dari Telegram: ").strip()
+        # Kirim request kode, handle flood wait
         try:
-            await client.sign_in(phone, code)
+            await client.send_code_request(phone)
+            success("Kode verifikasi sudah dikirim ke Telegram!")
+            info("Cek Telegram (atau SMS biasa) untuk kode masuk.")
+        except FloodWaitError as fwe:
+            warn(f"Kode sudah pernah dikirim! Tunggu {fwe.seconds} detik ({fwe.seconds/60:.1f} menit)")
+            info("Kode verifikasi sebelumnya masih berlaku, coba langsung masukin.")
         except Exception as e:
-            if "password" in str(e).lower():
-                password = input("   Masukkan 2FA password: ").strip()
-                await client.sign_in(password=password)
-            else:
-                error(f"Login gagal: {e}")
+            warn(f"Gagal kirim ulang kode, mungkin kode sebelumnya masih berlaku: {e}")
+
+        while True:
+            code = input("   Masukkan kode verifikasi (0 untuk kirim ulang, kosongkan untuk batal): ").strip()
+
+            if code == '':
+                info("Setup dibatalkan.")
                 return False
+
+            if code == '0':
+                info("Mengirim ulang kode verifikasi...")
+                try:
+                    await client.send_code_request(phone)
+                    success("Kode verifikasi sudah dikirim ulang!")
+                    info("Cek Telegram / SMS biasa.")
+                except FloodWaitError as fwe:
+                    warn(f"Harus tunggu {fwe.seconds} detik ({fwe.seconds/60:.1f} menit) sebelum minta kode baru.")
+                    info("Kode sebelumnya masih berlaku, coba masukin kode yang udah ada.")
+                except Exception as e:
+                    error(f"Gagal kirim kode: {e}")
+                continue
+
+            try:
+                await client.sign_in(phone, code)
+                break  # Sukses
+            except FloodWaitError as fwe:
+                warn(f"Terlalu banyak percobaan! Tunggu {fwe.seconds} detik.")
+                info("Jalankan ulang setup setelah waktu tersebut.")
+                return False
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "password" in err_msg:
+                    password = input("   Masukkan 2FA password: ").strip()
+                    try:
+                        await client.sign_in(password=password)
+                        break
+                    except Exception as e2:
+                        error(f"2FA gagal: {e2}")
+                        return False
+                elif "invalid" in err_msg or "code" in err_msg:
+                    warn(f"Kode verifikasi salah. Coba lagi atau kirim ulang (0).")
+                    continue
+                else:
+                    error(f"Login gagal: {e}")
+                    return False
 
     me = await client.get_me()
     await client.disconnect()
