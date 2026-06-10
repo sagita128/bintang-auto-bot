@@ -40,7 +40,7 @@ except ImportError:
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "config.json"
 STATE_FILE = BASE_DIR / "state.json"
-SESSION_FILE = BASE_DIR / "session"
+SESSION_FILE = BASE_DIR / "session"  # default, akan di-override oleh config
 LOG_FILE = BASE_DIR / "bot.log"
 
 API_BASE = "https://spinhub.cc"
@@ -132,13 +132,20 @@ async def setup_wizard():
         "phone": phone,
         "bot_username": DEFAULT_BOT,
         "check_interval": 300,
+        "session_name": phone.replace('+', '').replace('-', '').replace(' ', ''),
     }
     save_config(config)
-    success("Config tersimpan!")
+
+    # Simpan juga sebagai config_<session_name>.json untuk multi-account
+    account_config = BASE_DIR / f"config_{config['session_name']}.json"
+    with open(account_config, 'w') as f:
+        json.dump(config, f, indent=2)
+    success(f"Config tersimpan! (config.json + {account_config.name})")
 
     # Login ke Telegram
     print("\n🔐 Langkah 2: Login ke Telegram")
-    client = TelegramClient(str(SESSION_FILE), int(api_id), api_hash)
+    session_file = BASE_DIR / config['session_name']
+    client = TelegramClient(str(session_file), int(api_id), api_hash)
     await client.connect()
 
     if not await client.is_user_authorized():
@@ -190,7 +197,9 @@ async def setup_wizard():
 
 async def get_init_data(config: dict) -> str:
     """Dapatkan fresh initData dari Telegram"""
-    client = TelegramClient(str(SESSION_FILE), config['api_id'], config['api_hash'])
+    session_name = config.get('session_name', 'session')
+    session_file = BASE_DIR / session_name
+    client = TelegramClient(str(session_file), config['api_id'], config['api_hash'])
     await client.connect()
 
     if not await client.is_user_authorized():
@@ -346,7 +355,9 @@ class Bot:
 
     async def _join_channel(self, username):
         from telethon.tl.functions.channels import JoinChannelRequest
-        client = TelegramClient(str(SESSION_FILE), self.config['api_id'], self.config['api_hash'])
+        session_name = self.config.get('session_name', 'session')
+        session_file = BASE_DIR / session_name
+        client = TelegramClient(str(session_file), self.config['api_id'], self.config['api_hash'])
         await client.connect()
         try:
             entity = await client.get_entity(username)
@@ -515,12 +526,41 @@ class Bot:
 # ═══════════════════════════════════════════════════════════════
 
 def main():
+    # List accounts
+    if '--list' in sys.argv:
+        configs = list(BASE_DIR.glob('config_*.json'))
+        if configs:
+            info("📱 Akun yang tersedia:")
+            for c in configs:
+                name = c.stem.replace('config_', '')
+                with open(c) as f:
+                    cfg = json.load(f)
+                info(f"  • {name} ({cfg.get('phone', '?')})")
+        else:
+            info("Belum ada akun. Jalankan: python3 bot.py --setup")
+        return
+
     # Setup mode
     if '--setup' in sys.argv or not CONFIG_FILE.exists():
         asyncio.run(setup_wizard())
         return
 
     config = load_config()
+
+    # Support --account flag untuk switch akun
+    if '--account' in sys.argv:
+        idx = sys.argv.index('--account')
+        if idx + 1 < len(sys.argv):
+            account_name = sys.argv[idx + 1]
+            account_config = BASE_DIR / f"config_{account_name}.json"
+            if account_config.exists():
+                with open(account_config) as f:
+                    config = json.load(f)
+                info(f"📱 Switching ke akun: {account_name}")
+            else:
+                error(f"Config {account_config} tidak ditemukan!")
+                return
+
     bot = Bot(config)
 
     if '--status' in sys.argv:
