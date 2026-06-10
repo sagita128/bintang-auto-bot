@@ -20,7 +20,7 @@ import sys
 import os
 import time
 import requests as req
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -292,24 +292,56 @@ class Bot:
             return 0.0
 
         for t in ad_tasks:
-            r = self.api.post(f"/api/tasks/{t['id']}/claim")
-            if r.get('ok'):
-                reward = r.get('reward', 0)
-                total += reward
-                self.state['ads_claimed'] = self.state.get('ads_claimed', 0) + 1
-                success(f"🎬 Ad claimed! +{reward}⭐ → Balance: {r.get('balance', '?')}⭐")
-            elif 'already_claimed' in str(r) or 'cooldown' in str(r).lower():
-                info(f"⏰ Ad cooldown aktif: {r}")
-                break
-            elif r.get('status') == 401:
-                warn("Auth expired, refreshing...")
-                if self.refresh():
-                    return self.claim_ads()
-                return total
-            else:
-                info(f"Ad result: {r}")
-                break
-            time.sleep(2)
+            available = t.get('available', True)
+            cooldown_until = t.get('cooldownUntil')
+            burst_size = t.get('burstSize', 1)
+            burst_left = t.get('burstLeft', 0)
+            cooldown_hrs = t.get('cooldownHrs', 1)
+
+            info(f"🎬 Ad task: available={available} burst={burst_left}/{burst_size} cooldown={cooldown_hrs}h")
+
+            if not available and cooldown_until:
+                try:
+                    cd_time = datetime.fromisoformat(cooldown_until.replace('Z', '+00:00'))
+                    now = datetime.now(timezone.utc)
+                    wait_sec = (cd_time - now).total_seconds()
+                    if wait_sec > 0:
+                        info(f"⏰ Ad cooldown sampai {cooldown_until}, tunggu {wait_sec:.0f}s ({wait_sec/60:.0f}m)")
+                        self.state['next_ad_available'] = cooldown_until
+                        save_state(self.state)
+                        return total
+                except:
+                    pass
+
+            # Claim ads dalam burst
+            claimed_in_burst = 0
+            for i in range(burst_size):
+                r = self.api.post(f"/api/tasks/{t['id']}/claim")
+                if r.get('ok'):
+                    reward = r.get('reward', 0)
+                    total += reward
+                    claimed_in_burst += 1
+                    self.state['ads_claimed'] = self.state.get('ads_claimed', 0) + 1
+                    success(f"🎬 Ad #{claimed_in_burst} claimed! +{reward}⭐ → Balance: {r.get('balance', '?')}⭐")
+                    if r.get('cooldownUntil'):
+                        self.state['next_ad_available'] = r['cooldownUntil']
+                elif 'cooldown' in str(r).lower() or 'already_claimed' in str(r):
+                    info(f"⏰ Ad cooldown aktif setelah {claimed_in_burst} claim")
+                    if isinstance(r, dict) and r.get('cooldownUntil'):
+                        self.state['next_ad_available'] = r['cooldownUntil']
+                    break
+                elif r.get('status') == 401:
+                    warn("Auth expired, refreshing...")
+                    if self.refresh():
+                        return self.claim_ads()
+                    return total
+                else:
+                    info(f"Ad result: {r}")
+                    break
+                time.sleep(3)
+
+            if claimed_in_burst > 0:
+                info(f"🎬 Total burst: {claimed_in_burst} ads = +{total}⭐")
 
         return total
 
@@ -331,7 +363,6 @@ class Bot:
             tid = t.get('id', '?')
             ttitle = t.get('titleEn', t.get('title', '?'))
 
-            # Log semua task
             if ttype in skip_types:
                 continue
             if tstatus != 'ACTIVE':
@@ -341,7 +372,17 @@ class Bot:
                 info(f"  ⏭ Task '{ttitle}' ({ttype}) udah di-claim sebelumnya, skip")
                 continue
 
-            info(f"  🎯 Task '{ttitle}' ({ttype}) → mencoba claim...")
+            # Cek available field
+            available = t.get('available', True)
+            if not available:
+                cooldown_until = t.get('cooldownUntil')
+                if cooldown_until:
+                    info(f"  ⏭ Task '{ttitle}' ({ttype}) cooldown sampai {cooldown_until}")
+                else:
+                    info(f"  ⏭ Task '{ttitle}' ({ttype}) belum available")
+                continue
+
+            info(f"  🎯 Task '{ttitle}' ({ttype}) +{t.get('reward', '?')}⭐ → mencoba claim...")
             r = self.api.post(f"/api/tasks/{tid}/claim")
             if r.get('ok'):
                 reward = r.get('reward', 0)
@@ -390,14 +431,29 @@ class Bot:
         info(f"📊 Earned this run: +{total}⭐ | All time: +{self.state['total_earned']:.1f}⭐")
 
     def run_loop(self):
-        interval = self.config.get('check_interval', 300)
-        info(f"🔄 Starting loop (interval: {interval}s)")
+        info(f"🔄 Starting smart loop")
 
         while True:
             try:
                 self.run_once()
-                info(f"💤 Next check dalam {interval}s...")
-                time.sleep(interval)
+
+                # Hitung interval berdasarkan cooldown
+                next_ad = self.state.get('next_ad_available')
+                if next_ad:
+                    try:
+                        cd_time = datetime.fromisoformat(next_ad.replace('Z', '+00:00'))
+                        now = datetime.now(timezone.utc)
+                        wait_sec = max((cd_time - now).total_seconds(), 60)
+                        # Tambah 30 detik buffer
+                        wait_sec += 30
+                        info(f"💤 Next ad available dalam {wait_sec:.0f}s ({wait_sec/60:.1f}m)")
+                        time.sleep(min(wait_sec, 3600))  # Max 1 jam
+                    except:
+                        info("💤 Next check dalam 5m (default)")
+                        time.sleep(300)
+                else:
+                    info("💤 Next check dalam 5m (no cooldown info)")
+                    time.sleep(300)
             except KeyboardInterrupt:
                 info("Bot stopped!")
                 break
