@@ -34,15 +34,30 @@ python3 bot.py --setup      # Setup ulang
 ## 🏃 Background (24/7)
 
 ```bash
-# Cara 1: nohup
-nohup python3 bot.py --loop &
+# 1. Pasang wakelock (biar HP gak matiin Termux)
+termux-wake-lock
 
-# Cara 2: screen
+# 2. Buat screen session
 screen -S bintang
+
+# 3. Jalankan bot
 python3 bot.py --loop
-# Ctrl+A, D untuk detach
-# screen -r bintang untuk balik
+
+# 4. Detach (keluar tanpa matiin bot)
+# Tekan: Ctrl+A, lalu D
+
+# 5. Tutup Termux aja! Bot tetap jalan
 ```
+
+Mau balik ke bot:
+```bash
+screen -r bintang
+```
+
+Cara ini bikin:
+- ✅ Bot jalan terus walau Termux ditutup
+- ✅ Hemat baterai (gak perlu buka Termux)
+- ✅ Auto-reconnect kalau koneksi putus
 
 ## ✅ Fitur
 
