@@ -281,9 +281,15 @@ class Bot:
         total = 0.0
         tasks = self.api.get("/api/tasks")
         if not isinstance(tasks, list):
+            warn(f"Ads response bukan list: {tasks}")
             return 0.0
 
         ad_tasks = [t for t in tasks if t['type'] == 'WATCH_AD' and t['status'] == 'ACTIVE']
+        info(f"🎬 Active ad tasks: {len(ad_tasks)}")
+
+        if not ad_tasks:
+            info("🎬 Tidak ada ad task yang aktif")
+            return 0.0
 
         for t in ad_tasks:
             r = self.api.post(f"/api/tasks/{t['id']}/claim")
@@ -293,7 +299,7 @@ class Bot:
                 self.state['ads_claimed'] = self.state.get('ads_claimed', 0) + 1
                 success(f"🎬 Ad claimed! +{reward}⭐ → Balance: {r.get('balance', '?')}⭐")
             elif 'already_claimed' in str(r) or 'cooldown' in str(r).lower():
-                info("⏰ Ad cooldown aktif")
+                info(f"⏰ Ad cooldown aktif: {r}")
                 break
             elif r.get('status') == 401:
                 warn("Auth expired, refreshing...")
@@ -311,26 +317,47 @@ class Bot:
         total = 0.0
         tasks = self.api.get("/api/tasks")
         if not isinstance(tasks, list):
+            warn(f"Tasks response bukan list: {tasks}")
             return 0.0
 
-        skip_types = ['WATCH_AD', 'INVITE_FRIENDS', 'SHARE_FRIENDS', 'POST_STORY']
-        claimable = [t for t in tasks
-                     if t['type'] not in skip_types
-                     and t['status'] == 'ACTIVE'
-                     and t['id'] not in self.state.get('claimed_ids', [])]
+        info(f"📋 Total tasks dari API: {len(tasks)}")
 
-        for t in claimable:
-            r = self.api.post(f"/api/tasks/{t['id']}/claim")
+        skip_types = ['WATCH_AD', 'INVITE_FRIENDS', 'SHARE_FRIENDS', 'POST_STORY']
+        claimed_ids = self.state.get('claimed_ids', [])
+
+        for t in tasks:
+            ttype = t.get('type', '?')
+            tstatus = t.get('status', '?')
+            tid = t.get('id', '?')
+            ttitle = t.get('titleEn', t.get('title', '?'))
+
+            # Log semua task
+            if ttype in skip_types:
+                continue
+            if tstatus != 'ACTIVE':
+                info(f"  ⏭ Task '{ttitle}' ({ttype}) status={tstatus}, skip")
+                continue
+            if tid in claimed_ids:
+                info(f"  ⏭ Task '{ttitle}' ({ttype}) udah di-claim sebelumnya, skip")
+                continue
+
+            info(f"  🎯 Task '{ttitle}' ({ttype}) → mencoba claim...")
+            r = self.api.post(f"/api/tasks/{tid}/claim")
             if r.get('ok'):
                 reward = r.get('reward', 0)
                 total += reward
-                self.state['claimed_ids'] = self.state.get('claimed_ids', []) + [t['id']]
+                self.state['claimed_ids'] = claimed_ids + [tid]
                 self.state['tasks_claimed'] = self.state.get('tasks_claimed', 0) + 1
-                success(f"📋 Task '{t['titleEn']}' claimed! +{reward}⭐")
+                success(f"  ✅ Task '{ttitle}' claimed! +{reward}⭐")
             elif 'already_claimed' in str(r):
-                self.state['claimed_ids'] = self.state.get('claimed_ids', []) + [t['id']]
+                self.state['claimed_ids'] = claimed_ids + [tid]
+                info(f"  ⏭ Task '{ttitle}' already claimed")
+            else:
+                warn(f"  ❌ Task '{ttitle}' gagal: {r}")
             time.sleep(2)
 
+        if total == 0:
+            info("📋 Tidak ada task baru yang bisa di-claim")
         return total
 
     def run_once(self):
