@@ -388,6 +388,7 @@ class Bot:
                 info(f"  📢 Joining @{target}...")
                 try:
                     asyncio.run(self._join_channel(target))
+                    time.sleep(5)  # Tunggu Telegram sync
                 except Exception as e:
                     warn(f"  ⚠ Join gagal: {e}")
 
