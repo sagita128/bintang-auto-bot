@@ -1,0 +1,17 @@
+{
+    "api_id": 0,
+    "api_hash": "",
+    "phone": "+62xxx",
+    "bot_username": "EarnStarsAppBot",
+    "settings": {
+        "auto_watch_ads": true,
+        "auto_claim_rewards": true,
+        "auto_join_channels": true,
+        "auto_referral": false,
+        "cooldown_seconds": 7200,
+        "check_interval_seconds": 300,
+        "delay_between_actions": 3,
+        "max_ads_per_session": 5,
+        "notify_on_complete": true
+    }
+}
