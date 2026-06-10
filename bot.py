@@ -424,3 +424,31 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ═══════════════════════════════════════════════════════════════
+#  TERMUX BACKGROUND TIPS
+# ═══════════════════════════════════════════════════════════════
+#  nohup gak work di Termux. Pakai cara ini:
+#
+#  Cara 1: termux-wake-lock + screen (PALING GAMPANG)
+#    termux-wake-lock
+#    screen -S bot
+#    python3 bot.py --loop
+#    Ctrl+A, D (untuk detach)
+#    Tutup Termux aja, bot tetap jalan!
+#
+#  Cara 2: tmux
+#    tmux new -s bot
+#    python3 bot.py --loop
+#    Ctrl+B, D (untuk detach)
+#    tmux attach -t bot (untuk balik)
+#
+#  Cara 3: Termux:Boot (auto start saat HP nyala)
+#    Install Termux:Boot dari F-Droid
+#    Buat file ~/.termux/boot/start-bot.sh:
+#      #!/data/data/com.termux/files/usr/bin/sh
+#      termux-wake-lock
+#      cd ~/bintang-auto-bot
+#      python3 bot.py --loop &
+#    chmod +x ~/.termux/boot/start-bot.sh
+# ═══════════════════════════════════════════════════════════════
