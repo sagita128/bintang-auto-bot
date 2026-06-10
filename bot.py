@@ -292,43 +292,46 @@ class Bot:
             return 0.0
 
         for t in ad_tasks:
-            available = t.get('available', True)
-            cooldown_until = t.get('cooldownUntil')
-            burst_size = t.get('burstSize', 1)
+            burst_size = t.get('burstSize', 5)
             burst_left = t.get('burstLeft', 0)
-            cooldown_hrs = t.get('cooldownHrs', 1)
+            cooldown_until = t.get('cooldownUntil')
 
-            info(f"🎬 Ad task: available={available} burst={burst_left}/{burst_size} cooldown={cooldown_hrs}h")
+            info(f"🎬 Ad: burst_left={burst_left}/{burst_size} cooldown_until={cooldown_until}")
 
-            if not available and cooldown_until:
+            # Kalau ada cooldownUntil, cek apakah sudah lewat
+            if cooldown_until:
                 try:
                     cd_time = datetime.fromisoformat(cooldown_until.replace('Z', '+00:00'))
                     now = datetime.now(timezone.utc)
                     wait_sec = (cd_time - now).total_seconds()
                     if wait_sec > 0:
-                        info(f"⏰ Ad cooldown sampai {cooldown_until}, tunggu {wait_sec:.0f}s ({wait_sec/60:.0f}m)")
+                        info(f"⏰ Cooldown aktif, tunggu {wait_sec:.0f}s ({wait_sec/60:.1f}m)")
                         self.state['next_ad_available'] = cooldown_until
                         save_state(self.state)
                         return total
                 except:
                     pass
 
-            # Claim ads dalam burst
-            claimed_in_burst = 0
+            # Langsung claim tanpa cek available — API yang handle cooldown
+            claimed = 0
             for i in range(burst_size):
+                info(f"  🎬 Claim attempt #{i+1}...")
                 r = self.api.post(f"/api/tasks/{t['id']}/claim")
                 if r.get('ok'):
                     reward = r.get('reward', 0)
                     total += reward
-                    claimed_in_burst += 1
+                    claimed += 1
                     self.state['ads_claimed'] = self.state.get('ads_claimed', 0) + 1
-                    success(f"🎬 Ad #{claimed_in_burst} claimed! +{reward}⭐ → Balance: {r.get('balance', '?')}⭐")
+                    success(f"  ✅ Ad #{claimed}! +{reward}⭐ → Balance: {r.get('balance', '?')}⭐")
                     if r.get('cooldownUntil'):
                         self.state['next_ad_available'] = r['cooldownUntil']
-                elif 'cooldown' in str(r).lower() or 'already_claimed' in str(r):
-                    info(f"⏰ Ad cooldown aktif setelah {claimed_in_burst} claim")
+                elif 'cooldown' in str(r).lower():
+                    info(f"  ⏰ Cooldown setelah {claimed} claim")
                     if isinstance(r, dict) and r.get('cooldownUntil'):
                         self.state['next_ad_available'] = r['cooldownUntil']
+                    break
+                elif 'already_claimed' in str(r):
+                    info(f"  ⏭ Already claimed")
                     break
                 elif r.get('status') == 401:
                     warn("Auth expired, refreshing...")
@@ -336,13 +339,16 @@ class Bot:
                         return self.claim_ads()
                     return total
                 else:
-                    info(f"Ad result: {r}")
+                    info(f"  ❌ Result: {r}")
                     break
                 time.sleep(5)
 
-            if claimed_in_burst > 0:
-                info(f"🎬 Total burst: {claimed_in_burst} ads = +{total}⭐")
+            if claimed > 0:
+                info(f"🎬 Burst total: {claimed} ads = +{total}⭐")
+            else:
+                info("🎬 Tidak ada ad yang bisa di-claim")
 
+        save_state(self.state)
         return total
 
     def claim_tasks(self):
@@ -362,27 +368,17 @@ class Bot:
             tstatus = t.get('status', '?')
             tid = t.get('id', '?')
             ttitle = t.get('titleEn', t.get('title', '?'))
+            target = t.get('target')
 
             if ttype in skip_types:
                 continue
             if tstatus != 'ACTIVE':
-                info(f"  ⏭ Task '{ttitle}' ({ttype}) status={tstatus}, skip")
                 continue
             if tid in claimed_ids:
-                info(f"  ⏭ Task '{ttitle}' ({ttype}) udah di-claim sebelumnya, skip")
                 continue
 
-            # Cek available field
-            available = t.get('available', True)
-            if not available:
-                cooldown_until = t.get('cooldownUntil')
-                if cooldown_until:
-                    info(f"  ⏭ Task '{ttitle}' ({ttype}) cooldown sampai {cooldown_until}")
-                else:
-                    info(f"  ⏭ Task '{ttitle}' ({ttype}) belum available")
-                continue
-
-            info(f"  🎯 Task '{ttitle}' ({ttype}) +{t.get('reward', '?')}⭐ → mencoba claim...")
+            # Langsung coba claim tanpa cek available
+            info(f"  🎯 Task '{ttitle}' ({ttype}) target={target}")
             r = self.api.post(f"/api/tasks/{tid}/claim")
             if r.get('ok'):
                 reward = r.get('reward', 0)
@@ -393,6 +389,8 @@ class Bot:
             elif 'already_claimed' in str(r):
                 self.state['claimed_ids'] = claimed_ids + [tid]
                 info(f"  ⏭ Task '{ttitle}' already claimed")
+            elif 'cooldown' in str(r).lower():
+                info(f"  ⏰ Task '{ttitle}' cooldown")
             else:
                 warn(f"  ❌ Task '{ttitle}' gagal: {r}")
             time.sleep(2)
