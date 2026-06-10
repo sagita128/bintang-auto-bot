@@ -366,7 +366,7 @@ class Bot:
 
         info(f"📋 Total tasks dari API: {len(tasks)}")
 
-        skip_types = ['WATCH_AD', 'INVITE_FRIENDS', 'SHARE_FRIENDS']
+        skip_types = ['WATCH_AD', 'INVITE_FRIENDS']
         claimed_ids = self.state.get('claimed_ids', [])
 
         for t in tasks:
