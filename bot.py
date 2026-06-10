@@ -399,9 +399,14 @@ class Bot:
                 info(f"  📸 Trying complete before claim...")
                 for ep in ['complete', 'start', 'verify']:
                     cr = self.api.post(f"/api/tasks/{tid}/{ep}")
-                    if cr.get('ok') or cr.get('status') != 404:
+                    if cr.get('ok'):
+                        info(f"    POST /{ep}: ok")
+                        break
+                    elif cr.get('status') in (200, 201, 204):
                         info(f"    POST /{ep}: {cr}")
                         break
+                    else:
+                        info(f"    POST /{ep} returned {cr.get('status')}: {cr.get('error', '?')}")
 
             # Join channel dulu kalau SUBSCRIBE_CHANNEL
             if ttype == 'SUBSCRIBE_CHANNEL' and target:
