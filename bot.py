@@ -21,6 +21,7 @@ import os
 import time
 import requests as req
 from datetime import datetime, timedelta, timezone
+import calendar
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -284,6 +285,20 @@ class Bot:
             warn(f"Ads response bukan list: {tasks}")
             return 0.0
 
+        # Cek cooldown dari /api/me (lebih akurat)
+        me = self.api.get("/api/me")
+        if isinstance(me, dict) and 'adCooldownUntil' in me:
+            cd_ms = me['adCooldownUntil']
+            now_ms = int(time.time() * 1000)
+            if cd_ms > now_ms:
+                wait_sec = (cd_ms - now_ms) / 1000
+                info(f"⏰ Ad cooldown dari API: {wait_sec:.0f}s ({wait_sec/60:.1f}m)")
+                self.state['next_ad_cd_ms'] = cd_ms
+                save_state(self.state)
+                return total
+            else:
+                info(f"⏰ Ad cooldown sudah lewat! Bisa claim!")
+
         ad_tasks = [t for t in tasks if t['type'] == 'WATCH_AD' and t['status'] == 'ACTIVE']
         info(f"🎬 Active ad tasks: {len(ad_tasks)}")
 
@@ -293,44 +308,22 @@ class Bot:
 
         for t in ad_tasks:
             burst_size = t.get('burstSize', 5)
-            burst_left = t.get('burstLeft', 0)
-            cooldown_until = t.get('cooldownUntil')
+            info(f"🎬 Ad: burstSize={burst_size}, langsung claim...")
 
-            info(f"🎬 Ad: burst_left={burst_left}/{burst_size} cooldown_until={cooldown_until}")
-
-            # Kalau ada cooldownUntil, cek apakah sudah lewat
-            if cooldown_until:
-                try:
-                    cd_time = datetime.fromisoformat(cooldown_until.replace('Z', '+00:00'))
-                    now = datetime.now(timezone.utc)
-                    wait_sec = (cd_time - now).total_seconds()
-                    if wait_sec > 0:
-                        info(f"⏰ Cooldown aktif, tunggu {wait_sec:.0f}s ({wait_sec/60:.1f}m)")
-                        self.state['next_ad_available'] = cooldown_until
-                        save_state(self.state)
-                        return total
-                except:
-                    pass
-
-            # Langsung claim tanpa cek available — API yang handle cooldown
             claimed = 0
             for i in range(burst_size):
-                info(f"  🎬 Claim attempt #{i+1}...")
+                info(f"  🎬 Claim #{i+1}...")
                 r = self.api.post(f"/api/tasks/{t['id']}/claim")
                 if r.get('ok'):
                     reward = r.get('reward', 0)
                     total += reward
                     claimed += 1
                     self.state['ads_claimed'] = self.state.get('ads_claimed', 0) + 1
-                    success(f"  ✅ Ad #{claimed}! +{reward}⭐ → Balance: {r.get('balance', '?')}⭐")
-                    if r.get('cooldownUntil'):
-                        self.state['next_ad_available'] = r['cooldownUntil']
-                elif 'cooldown' in str(r).lower():
+                    success(f"  ✅ Ad #{claimed}! +{reward}⭐")
+                elif r.get('status') == 429 or 'cooldown' in str(r).lower():
                     info(f"  ⏰ Cooldown setelah {claimed} claim")
-                    if isinstance(r, dict) and r.get('cooldownUntil'):
-                        self.state['next_ad_available'] = r['cooldownUntil']
                     break
-                elif 'already_claimed' in str(r):
+                elif r.get('status') == 409 or 'already_claimed' in str(r):
                     info(f"  ⏭ Already claimed")
                     break
                 elif r.get('status') == 401:
@@ -346,7 +339,7 @@ class Bot:
             if claimed > 0:
                 info(f"🎬 Burst total: {claimed} ads = +{total}⭐")
             else:
-                info("🎬 Tidak ada ad yang bisa di-claim")
+                info("🎬 Tidak ada ad yang bisa di-claim (cooldown)")
 
         save_state(self.state)
         return total
@@ -435,23 +428,26 @@ class Bot:
             try:
                 self.run_once()
 
-                # Hitung interval berdasarkan cooldown
-                next_ad = self.state.get('next_ad_available')
-                if next_ad:
-                    try:
-                        cd_time = datetime.fromisoformat(next_ad.replace('Z', '+00:00'))
-                        now = datetime.now(timezone.utc)
-                        wait_sec = max((cd_time - now).total_seconds(), 60)
-                        # Tambah 30 detik buffer
-                        wait_sec += 30
-                        info(f"💤 Next ad available dalam {wait_sec:.0f}s ({wait_sec/60:.1f}m)")
-                        time.sleep(min(wait_sec, 3600))  # Max 1 jam
-                    except:
-                        info("💤 Next check dalam 5m (default)")
-                        time.sleep(300)
+                # Hitung interval berdasarkan adCooldownUntil dari /api/me
+                me = self.api.get("/api/me")
+                wait_sec = 300  # default 5 menit
+
+                if isinstance(me, dict) and 'adCooldownUntil' in me:
+                    cd_ms = me['adCooldownUntil']
+                    now_ms = int(time.time() * 1000)
+                    if cd_ms > now_ms:
+                        wait_sec = int((cd_ms - now_ms) / 1000) + 30  # +30s buffer
+                        info(f"💤 Ad cooldown: tunggu {wait_sec}s ({wait_sec/60:.1f}m)")
+                    else:
+                        info(f"💤 Cooldown sudah lewat! Cycle berikutnya 30s")
+                        wait_sec = 30
                 else:
-                    info("💤 Next check dalam 5m (no cooldown info)")
-                    time.sleep(300)
+                    info(f"💤 Tidak ada cooldown info, tunggu {wait_sec}s")
+
+                # Cap at 2 hours
+                wait_sec = min(wait_sec, 7200)
+                time.sleep(wait_sec)
+
             except KeyboardInterrupt:
                 info("Bot stopped!")
                 break
