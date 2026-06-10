@@ -8,8 +8,8 @@ Auto claim ads & tasks untuk **@EarnStarsAppBot** di Telegram.
 # Install Termux dari F-Droid, lalu jalankan:
 
 pkg install python git -y && pip install telethon requests && \
-git clone https://github.com/rusmanaid/bintang bintang-bot && \
-cd bintang-bot && python3 bot.py
+git clone https://github.com/sagita128/bintang-auto-bot && \
+cd bintang-auto-bot && python3 bot.py
 ```
 
 ## 📋 Setup
