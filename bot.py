@@ -405,6 +405,7 @@ class Bot:
 
         info(f"💰 Balance: {me['balance']}⭐ | Earned: {me['earned']}⭐")
 
+        # Sync state dengan API
         if self.state.get('balance_start', 0) == 0:
             self.state['balance_start'] = me['balance']
 
@@ -419,7 +420,7 @@ class Bot:
         me2 = self.get_balance()
         if me2:
             info(f"💰 Final Balance: {me2['balance']}⭐")
-        info(f"📊 Earned this run: +{total}⭐ | All time: +{self.state['total_earned']:.1f}⭐")
+        info(f"📊 Earned this run: +{total}⭐ | API balance: {me.get('balance', '?')}⭐")
 
     def run_loop(self):
         info(f"🔄 Starting smart loop")
