@@ -338,7 +338,7 @@ class Bot:
                 else:
                     info(f"Ad result: {r}")
                     break
-                time.sleep(3)
+                time.sleep(5)
 
             if claimed_in_burst > 0:
                 info(f"🎬 Total burst: {claimed_in_burst} ads = +{total}⭐")
