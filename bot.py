@@ -366,7 +366,7 @@ class Bot:
 
         info(f"📋 Total tasks dari API: {len(tasks)}")
 
-        skip_types = ['WATCH_AD', 'INVITE_FRIENDS']
+        skip_types = ['WATCH_AD', 'INVITE_FRIENDS', 'SHARE_FRIENDS']
         claimed_ids = self.state.get('claimed_ids', [])
 
         for t in tasks:
@@ -382,6 +382,15 @@ class Bot:
                 continue
             if tid in claimed_ids:
                 continue
+
+            # POST_STORY: coba complete dulu sebelum claim
+            if ttype == 'POST_STORY':
+                info(f"  📸 Trying complete before claim...")
+                for ep in ['complete', 'start', 'verify']:
+                    cr = self.api.post(f"/api/tasks/{tid}/{ep}")
+                    if cr.get('ok') or cr.get('status') != 404:
+                        info(f"    POST /{ep}: {cr}")
+                        break
 
             # Join channel dulu kalau SUBSCRIBE_CHANNEL
             if ttype == 'SUBSCRIBE_CHANNEL' and target:
