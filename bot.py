@@ -584,7 +584,7 @@ class Bot:
                 if isinstance(me, dict) and 'adCooldownUntil' in me:
                     cd_ms = me['adCooldownUntil']
                     now_ms = int(time.time() * 1000)
-                    if cd_ms > now_ms:
+                    if cd_ms is not None and cd_ms > now_ms:
                         wait_sec = int((cd_ms - now_ms) / 1000) + 30  # +30s buffer
                         info(f"💤 Ad cooldown: tunggu {wait_sec}s ({wait_sec/60:.1f}m)")
                     else:
