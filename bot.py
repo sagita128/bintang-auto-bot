@@ -144,7 +144,24 @@ async def setup_wizard():
 
     # Login ke Telegram
     print("\n🔐 Langkah 2: Login ke Telegram")
-    session_file = BASE_DIR / config['session_name']
+    
+    # Cek & reset session lama kalo ada
+    session_name = config['session_name']
+    session_file = BASE_DIR / session_name
+    stale_sessions = list(BASE_DIR.glob(f"{session_name}*"))
+    if stale_sessions:
+        warn(f"Ada {len(stale_sessions)} session file lama terdeteksi:")
+        for sf in stale_sessions:
+            info(f"  • {sf.name} ({sf.stat().st_size} bytes)")
+        hapus = input("   Hapus session lama? (y/n): ").strip().lower()
+        if hapus == 'y':
+            for sf in stale_sessions:
+                sf.unlink(missing_ok=True)
+                info(f"  🗑 Hapus {sf.name}")
+            success("Session lama dibersihkan!")
+        else:
+            info("Session lama dipertahankan.")
+    
     client = TelegramClient(str(session_file), int(api_id), api_hash)
 
     # Connect dengan retry
