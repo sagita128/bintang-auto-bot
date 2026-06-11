@@ -164,33 +164,60 @@ async def setup_wizard():
                 return False
 
     if not await client.is_user_authorized():
-        # Kirim request kode, handle flood wait
+        # Helper untuk nampilin info cara kode dikirim
+        def kode_dikirim_via(sent_code):
+            tipe = type(sent_code.type).__name__ if sent_code else '?'
+            if 'App' in tipe:
+                info("📱 Kode dikirim via Telegram App (cek chat Telegram)")
+            elif 'Sms' in tipe:
+                info("📨 Kode dikirim via SMS (cek SMS biasa di HP)")
+            elif 'Call' in tipe:
+                info("📞 Kode dikirim via panggilan telepon")
+            elif 'Fragment' in tipe:
+                info("🔗 Kode dikirim via Fragment")
+            else:
+                info(f"📬 Kode dikirim via {tipe if tipe != '?' else 'Telegram/SMS'}")
+
+        sent = None
         try:
-            await client.send_code_request(phone)
-            success("Kode verifikasi sudah dikirim ke Telegram!")
-            info("Cek Telegram (atau SMS biasa) untuk kode masuk.")
+            sent = await client.send_code_request(phone)
+            kode_dikirim_via(sent)
         except FloodWaitError as fwe:
-            warn(f"Kode sudah pernah dikirim! Tunggu {fwe.seconds} detik ({fwe.seconds/60:.1f} menit)")
-            info("Kode verifikasi sebelumnya masih berlaku, coba langsung masukin.")
+            warn(f"Harus tunggu {fwe.seconds} detik ({fwe.seconds/60:.1f} menit) sebelum minta kode.")
+            info("Kalau sebelumnya udah dapet kode, langsung masukin aja.")
         except Exception as e:
-            warn(f"Gagal kirim ulang kode, mungkin kode sebelumnya masih berlaku: {e}")
+            warn(f"Gagal kirim kode: {e}")
+            info("Mungkin kode sebelumnya masih berlaku, coba langsung masukin.")
 
         while True:
-            code = input("   Masukkan kode verifikasi (0 untuk kirim ulang, kosongkan untuk batal): ").strip()
+            prompt = "   Masukkan kode verifikasi"
+            prompt += " (0=kirim ulang, 1=force SMS, kosong=batal): "
+            code = input(prompt).strip()
 
             if code == '':
                 info("Setup dibatalkan.")
                 return False
 
+            if code == '1':
+                info("Mengirim ulang via SMS (force)...")
+                try:
+                    sent = await client.send_code_request(phone, force_sms=True)
+                    kode_dikirim_via(sent)
+                except FloodWaitError as fwe:
+                    warn(f"Harus tunggu {fwe.seconds} detik ({fwe.seconds/60:.1f} menit) sebelum minta kode baru.")
+                    info("Kode sebelumnya masih berlaku, coba masukin yang udah ada.")
+                except Exception as e:
+                    error(f"Gagal kirim kode: {e}")
+                continue
+
             if code == '0':
                 info("Mengirim ulang kode verifikasi...")
                 try:
-                    await client.send_code_request(phone)
-                    success("Kode verifikasi sudah dikirim ulang!")
-                    info("Cek Telegram / SMS biasa.")
+                    sent = await client.send_code_request(phone)
+                    kode_dikirim_via(sent)
                 except FloodWaitError as fwe:
                     warn(f"Harus tunggu {fwe.seconds} detik ({fwe.seconds/60:.1f} menit) sebelum minta kode baru.")
-                    info("Kode sebelumnya masih berlaku, coba masukin kode yang udah ada.")
+                    info("Kode sebelumnya masih berlaku, coba masukin yang udah ada.")
                 except Exception as e:
                     error(f"Gagal kirim kode: {e}")
                 continue
